@@ -8,7 +8,7 @@
    ```bash
    python preprocess.py
    ```
-   Converts raw labels to the required intermediate format.
+   Extract from all the labels the ones relevant to us (images just downloaded).
 
 3. **Convert to YOLO format**
    ```bash
@@ -30,7 +30,7 @@
 
 ## TL;DR
 
-Skip training and just test the pretrained model:
+Skip training and just test the pretrained model, after you've figured out how you might yourself train the model.
 ```bash
 python single_test.py
 ```
