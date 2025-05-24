@@ -10,7 +10,7 @@ dataset = fiftyone.zoo.load_zoo_dataset(
               split="train",
               label_types=["detections"],
               classes=["Chicken"],
-              max_samples=100,
+              max_samples=1000,
           )
 
 # session = fiftyone.launch_app(dataset) # you don't necessarily need to launch the app. 
