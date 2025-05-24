@@ -1,8 +1,8 @@
 task: detect
 mode: train
 model: yolo11n.pt
-data: toy_folder/data.yaml
-epochs: 70
+data: data.yaml
+epochs: 10
 time: null
 patience: 100
 batch: 16
@@ -10,7 +10,7 @@ imgsz: 640
 save: true
 save_period: -1
 cache: false
-device: null
+device: cpu
 workers: 8
 project: null
 name: train
@@ -102,4 +102,4 @@ auto_augment: randaugment
 erasing: 0.4
 cfg: null
 tracker: botsort.yaml
-save_dir: runs/detect/train
+save_dir: runs\detect\train

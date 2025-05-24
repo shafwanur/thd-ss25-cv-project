@@ -1,4 +1,6 @@
 .venv
-open-images-v7
 dataset
-test_image.jpeg
+debug
+*.mp4
+csv
+runs
