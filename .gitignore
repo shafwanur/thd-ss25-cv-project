@@ -3,3 +3,5 @@ dataset
 debug
 *.mp4
 csv
+tests
+.gitignore
