@@ -10,5 +10,9 @@ dependencies = [
     "ultralytics>=8.3.144",
 ]
 
+[tool.setuptools]
+packages = []
+
+
 [tool.ruff.lint]
 select = ["I"]

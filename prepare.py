@@ -106,7 +106,8 @@ def prepare_image_ids(*, data: Path, output: Path):
 
 @keep_file
 def download_images(*, output: Path, downloader: Path, ids: Path):
-    _ = subprocess.run(["python", downloader, "--download_folder", output, ids])
+    import sys
+    _ = subprocess.run([sys.executable, downloader, "--download_folder", output, ids])
 
 
 @keep_file
@@ -122,7 +123,10 @@ def prepare_data(*, filtered: Path, output: Path, label2id: dict[str, int]):
         with (filtered / split / "box.csv").open() as f:
             for line in dropwhile(lambda x: x.startswith("ImageID,"), f):
                 # ImageID,Source,LabelName,Confidence,XMin,XMax,YMin,YMax,IsOccluded,IsTruncated,IsGroupOf,IsDepiction,IsInside
-                id, _, label, _, xmin, xmax, ymin, ymax, *_ = line.split(",")
+                id, _, label, _, xmin, xmax, ymin, ymax, is_occluded, is_truncated, is_group_of, is_depiction, is_inside, *_ = line.split(",")
+                if int(is_group_of) != 0:
+                    continue
+
                 xmin = float(xmin)
                 xmax = float(xmax)
                 ymin = float(ymin)
@@ -205,7 +209,10 @@ if __name__ == "__main__":
         ids=filtered / "ids.txt",
     )
 
-    prepare_data(filtered=filtered, output=data / "prepared", label2id=label_map)
+    prepared = data / "prepared"
+    if prepared.exists():
+        shutil.rmtree(prepared)
+    prepare_data(filtered=filtered, output=prepared, label2id=label_map)
 
     with (data / "desc.yaml").open("w") as f:
         _ = f.write(f"path: {data / 'prepared'}\n")

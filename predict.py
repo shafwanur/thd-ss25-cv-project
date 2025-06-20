@@ -25,4 +25,5 @@ for r in results:
     relpath = Path(r.path).relative_to(image_path)
     save_name = Path("tmp/predicted") / relpath
     save_name.parent.mkdir(parents=True, exist_ok=True)
+    print(save_name)
     cv2.imwrite(save_name, img)
