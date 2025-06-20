@@ -10,3 +10,8 @@ csv
 tests
 .gitignore
 *.egg-info
+train
+valid
+test
+tests
+data.yaml
