@@ -3,7 +3,7 @@ import math
 from ultralytics import YOLO
 
 # --- Our best pretrained model
-model = YOLO("runs/detect/train2/weights/best.pt")  
+model = YOLO("runs/detect/train3/weights/best.pt")  
 
 # --- Capture camera feed
 cap = cv2.VideoCapture(0)
@@ -14,6 +14,10 @@ cap.set(4, 1000)
 
 # --- Classnames the model can currently detect
 classNames = ["chicken", "egg"]
+font = cv2.FONT_HERSHEY_SIMPLEX
+fontScale = 1
+color = (255, 0, 0)
+thickness = 1
 
 while True:
     success, img = cap.read()
@@ -54,10 +58,6 @@ while True:
                 cv2.putText(img, f"{classNames[cls]} {confidence}", org, font, fontScale, color, thickness)
 
     # --- Visual parameters for .putText() 
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    fontScale = 1
-    color = (255, 0, 0)
-    thickness = 1
     text_chicken = f"Chicken Count: {chicken_count}"
     text_eggs = f"Egg Count: {egg_count}"
     (text_width, text_height), _ = cv2.getTextSize(text_chicken, font, fontScale, thickness)
