@@ -15,3 +15,4 @@ valid
 test
 tests
 data.yaml
+__pycache__/
