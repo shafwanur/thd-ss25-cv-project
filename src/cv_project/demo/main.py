@@ -193,8 +193,12 @@ class BoxerFilter(QObject):
         self.input = input
         self.state = state
         self.add_fake_eggs = False
+        self.f = False
 
         _ = self.input.updated.connect(self.on_updated)
+
+    def set_f(self, f):
+        self.f = f
 
     def on_updated(self):
         # TODO: keep track of ids, for new ids - strict confidence level check, for old - lax?
@@ -231,6 +235,9 @@ class BoxerFilter(QObject):
                     )
                 )
 
+        if not self.f:
+            self.state.all_egg_ids = set()
+
         for obj in chain(boxed.objects, fake_eggs):
             if obj.confidence < 0.75:
                 continue
@@ -244,6 +251,7 @@ class BoxerFilter(QObject):
                 self.state.eggs[obj.id] = EggInfo(visible=True, obj=obj, chicken=None)
 
         for egg in self.state.eggs.values():
+            self.state.all_egg_ids.add(egg.obj.id)
             dists = [
                 (chicken, distance_between_rects(egg.obj.rect, chicken.obj.rect))
                 for chicken in self.state.chickens.values()
@@ -460,6 +468,9 @@ class MainWindow(QWidget):
 
         self.state_updater = BoxerFilter(self.boxed_container, self.state)
         self.state_updater.add_fake_eggs = self.options.fake_eggs.isChecked()
+        self.state_updater.f = self.layer_options.conv.isChecked()
+        self.layer_options.conv.toggled.connect(self.state_updater.set_f)
+        
 
         self.is_restarting = False
         self.source.start()
@@ -490,7 +501,7 @@ class DisplayInfo(QFrame):
 
     def update_count(self):
         self.chicken_count.setText(str(len(self.state.chickens)))
-        self.egg_count.setText(str(len(self.state.eggs)))
+        self.egg_count.setText(str(len(self.state.all_egg_ids)))
 
 
 @final
@@ -507,13 +518,16 @@ class DisplayOptions(QFrame):
             QCheckBox("Show labels"),
             QCheckBox("Show connections"),
             QCheckBox("Show image"),
-            QCheckBox("Conveyor Belt"),
         ]
         for layer in self.layers:
             layer.setChecked(True)
             layout.addWidget(layer)
 
         layout.addSpacing(20)
+
+        self.conv = QCheckBox("Conveyor Belt")
+        self.conv.setChecked(False)
+        layout.addWidget(self.conv)
 
         # self.scale = QCheckBox("Scale video")
         # layout.addWidget(self.scale)

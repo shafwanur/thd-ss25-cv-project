@@ -53,6 +53,7 @@ class State(QObject):
         self.objects: dict[int, DetectedObject] = {}
         self.chickens: dict[int, ChickenInfo] = {}
         self.eggs: dict[int, EggInfo] = {}
+        self.all_egg_ids: set[int] = set()
 
     def reset(self):
         self.img = None
