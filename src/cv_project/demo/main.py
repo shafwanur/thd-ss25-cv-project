@@ -117,8 +117,13 @@ class ImageSource(QObject):
         self.container.value = self.fs_thread.img
 
     def interrupt(self):
+        if self.fs_thread.isFinished():
+            self.finished.emit()
+            return
+
         print("ImageSource.interrupt")
         self.fs_thread.requestInterruption()
+        
 
     def wait(self):
         print("ImageSource.wait")
