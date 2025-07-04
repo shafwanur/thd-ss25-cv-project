@@ -225,7 +225,7 @@ class LabelsLayer(StateDisplayLayer):
         layout.setContentsMargins(4, 4, 4, 4)
         
         if obj.klass == Klass.Chicken:
-            info1 = QLabel(f"**Confidence**: {obj.confidence * 100}", textFormat=Qt.TextFormat.MarkdownText)
+            info1 = QLabel(f"**Confidence**: {round(obj.confidence * 100, 2)}", textFormat=Qt.TextFormat.MarkdownText)
         else:
             info1 = QLabel(f"**ID**: {id}", textFormat=Qt.TextFormat.MarkdownText)
         info1.setStyleSheet("background-color: transparent;")
