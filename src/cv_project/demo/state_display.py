@@ -223,6 +223,7 @@ class LabelsLayer(StateDisplayLayer):
 
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(4, 4, 4, 4)
+        
         if obj.klass == Klass.Chicken:
             info1 = QLabel(f"**Confidence**: {obj.confidence * 100}", textFormat=Qt.TextFormat.MarkdownText)
         else:

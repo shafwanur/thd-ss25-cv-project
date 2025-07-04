@@ -194,11 +194,15 @@ class BoxerFilter(QObject):
         self.state = state
         self.add_fake_eggs = False
         self.f = False
+        self.chickens = False 
 
         _ = self.input.updated.connect(self.on_updated)
 
     def set_f(self, f):
         self.f = f
+
+    def set_chickens(self, chickens):
+        self.chickens = chickens
 
     def on_updated(self):
         # TODO: keep track of ids, for new ids - strict confidence level check, for old - lax?
@@ -242,6 +246,9 @@ class BoxerFilter(QObject):
             if obj.confidence < 0.75:
                 continue
             
+            if self.chickens and obj.klass == Klass.Chicken:
+                continue
+
             self.state.objects[obj.id] = obj
             if obj.klass == Klass.Chicken:
                 self.state.chickens[obj.id] = ChickenInfo(
@@ -469,7 +476,9 @@ class MainWindow(QWidget):
         self.state_updater = BoxerFilter(self.boxed_container, self.state)
         self.state_updater.add_fake_eggs = self.options.fake_eggs.isChecked()
         self.state_updater.f = self.layer_options.conv.isChecked()
+        self.state_updater.chickens = self.layer_options.hide_chickens.isChecked()
         self.layer_options.conv.toggled.connect(self.state_updater.set_f)
+        self.layer_options.hide_chickens.toggled.connect(self.state_updater.set_chickens)
         
 
         self.is_restarting = False
@@ -528,6 +537,10 @@ class DisplayOptions(QFrame):
         self.conv = QCheckBox("Conveyor Belt")
         self.conv.setChecked(False)
         layout.addWidget(self.conv)
+
+        self.hide_chickens = QCheckBox("Hide Chickens")
+        self.hide_chickens.setChecked(False)
+        layout.addWidget(self.hide_chickens)
 
         # self.scale = QCheckBox("Scale video")
         # layout.addWidget(self.scale)
