@@ -257,7 +257,6 @@ class MainWindow(QWidget):
         #     self.layer_options.scale.toggled.connect(upd)
         #     upd(self.layer_options.scale.isChecked())
 
-
         self.filter = BoxerFilter(self.state)
         self.filter.add_fake_eggs = self.options.fake_eggs.isChecked()
         _ = self.options.fake_eggs.toggled.connect(self.filter.set_add_fake_eggs)
@@ -282,6 +281,7 @@ class MainWindow(QWidget):
         self.runner.stop_frames(self._on_stopped)
 
     def _on_stopped(self):
+        self.state.reset()
         self.runner.set_model(self.options.model.currentText(), self._on_model)
 
     def _on_model(self, ok: bool):

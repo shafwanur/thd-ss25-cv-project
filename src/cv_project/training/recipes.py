@@ -250,6 +250,9 @@ model_g0t0_e100ban = train(
 model_g0t0_e50bas = train(
     desc=final_data_desc / "desc.yaml", base="yolo11s.pt", epochs=50, batch=-1
 )
+model_g0t0_e100b20s = train(
+    desc=final_data_desc / "desc.yaml", base="yolo11s.pt", epochs=100, batch=20
+)
 
 
 def test(*, model: Path, split: str = "test"):

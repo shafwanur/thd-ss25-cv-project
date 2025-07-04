@@ -55,6 +55,7 @@ class State(QObject):
         self.objects = {}
         self.chickens = {}
         self.eggs = {}
+        self.all_egg_ids = set()
         self.was_reset.emit()
 
     def remove_all_objects(self):
