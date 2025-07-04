@@ -14,6 +14,7 @@ dependencies = [
     "ultralytics>=8.3.144",
     "yt-dlp>=2025.6.25",
     "names_generator",
+    "clip>=0.2.0",
 ]
 
 [project.scripts]
