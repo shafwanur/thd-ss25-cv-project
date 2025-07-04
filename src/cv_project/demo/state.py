@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from enum import Enum
 from typing import final
 
 from PySide6.QtCore import (
@@ -8,16 +7,12 @@ from PySide6.QtCore import (
     Signal,
 )
 
+from .detection.schemas import Klass
 from .utils import Img
 
 
-class Klass(Enum):
-    Chicken = 0
-    Egg = 1
-
-
 @dataclass
-class DetectedObject:
+class ObjectInfo:
     id: int
     klass: Klass
     confidence: float
@@ -28,14 +23,14 @@ class DetectedObject:
 class ChickenInfo:
     visible: bool
     name: str
-    obj: DetectedObject
+    obj: ObjectInfo
     eggs: list["EggInfo"]
 
 
 @dataclass
 class EggInfo:
     visible: bool
-    obj: DetectedObject
+    obj: ObjectInfo
     chicken: ChickenInfo | None
 
 
@@ -50,7 +45,7 @@ class State(QObject):
         super().__init__()
 
         self.img: Img | None = None
-        self.objects: dict[int, DetectedObject] = {}
+        self.objects: dict[int, ObjectInfo] = {}
         self.chickens: dict[int, ChickenInfo] = {}
         self.eggs: dict[int, EggInfo] = {}
         self.all_egg_ids: set[int] = set()

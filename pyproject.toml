@@ -41,4 +41,5 @@ reportUnknownMemberType = false
 [dependency-groups]
 dev = [
     "ipython>=9.4.0",
+    "ruff>=0.12.2",
 ]

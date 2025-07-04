@@ -22,7 +22,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .state import Klass, State
+from cv_project.demo.detection.schemas import Klass
+
+from .state import State
 from .utils import (
     img_size,
     img_to_pixmap,
@@ -47,10 +49,6 @@ class LayeredDisplay(QWidget):
         _ = self.state.was_reset.connect(self.on_reset)
         # self.scale = False
 
-        self.boxes_layer: BoxesLayer
-        self.labels_layer: LabelsLayer
-        self.connection_layer: ConnectionLayer
-        self.image_layer: ImageLayer
         self.layers: list[StateDisplayLayer] = []
         self.layers_visibility: list[bool] = [True] * len(LayerId)
 
@@ -76,13 +74,14 @@ class LayeredDisplay(QWidget):
 
         for layer in self.layers:
             layer.setParent(self)
-            layer.move(0, 0)
+            layer.setGeometry(QRect(QPoint(0, 0), self.size()))
         for idx in range(1, len(self.layers)):
             self.layers[idx].stackUnder(self.layers[idx - 1])
         for idx in range(len(self.layers)):
             self.layers[idx].setVisible(self.layers_visibility[idx])
 
     def reset(self):
+        print("LayeredDisplay.reset")
         for layer in self.layers:
             layer.hide()
             layer.deleteLater()
@@ -173,7 +172,7 @@ class ImageLayer(StateDisplayLayer):
             return
 
         assert self.transform.isIdentity()
-        assert img_size(img) == self.size()
+        assert img_size(img) == self.size(), f"{img_size(img)} != {self.size()}"
 
         painter.setTransform(self.transform)
         painter.drawPixmap(QPoint(0, 0), img_to_pixmap(img))

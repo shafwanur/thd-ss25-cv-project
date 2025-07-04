@@ -1,23 +1,16 @@
 import sys
-import ctypes
-import multiprocessing
-from pathlib import Path
+from dataclasses import dataclass
 from itertools import chain
-from ultralytics import solutions
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from names_generator import generate_name
-from typing import ParamSpec, cast, final, override
-from multiprocessing.sharedctypes import SynchronizedString
+from pathlib import Path
+from time import time
+from typing import final, override
 
-import cv2
+from names_generator import generate_name
 from PySide6.QtCore import (
     QObject,
     QPoint,
     QRect,
     QSize,
-    QThread,
-    QTimer,
     Signal,
 )
 from PySide6.QtGui import (
@@ -34,192 +27,63 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QSizePolicy,
-    QSpacerItem,
     QVBoxLayout,
     QWidget,
 )
-from ultralytics import YOLO
-from ultralytics.engine.model import Model
 
-from cv_project.demo.state_display import LayeredDisplay, LayerId
+from cv_project.demo.detection.runner import DetectionRunner, NewFrame
+from cv_project.demo.detection.schemas import (
+    DetectedObject,
+    Klass,
+    SrcType,
+)
 
-from .state import ChickenInfo, DetectedObject, EggInfo, Klass, State
+from .state import ChickenInfo, EggInfo, ObjectInfo, State
+from .state_display import LayeredDisplay, LayerId
 from .utils import (
-    Img,
     distance_between_rects,
     img_size,
 )
 
 
 @final
-class Container[T](QObject):
-    updated = Signal()
-
-    def __init__(self):
-        super().__init__()
-        self._value: T | None = None
-
-    @property
-    def value(self) -> T | None:
-        return self._value
-
-    @value.setter
-    def value(self, x: T | None):
-        self._value = x
-        self.updated.emit()
-
-
-@final
-class SourceThread(QThread):
-    ready: Signal = Signal()
-
-    def __init__(self, cap: cv2.VideoCapture):
-        super().__init__()
-        self.cap = cap
-        self.img = Img((0, 0, 3))
-
-    @override
-    def run(self, /):
-        while self.cap.isOpened():
-            if self.isInterruptionRequested():
-                break
-
-            success, img = self.cap.read()
-            if not success:
-                print("End of video or error reading frame.")
-                break
-            self.img = cast(Img, img)
-            self.ready.emit()
-        self.cap.release()
-
-
-@final
-class ImageSource(QObject):
-    finished: Signal = Signal()
-
-    def __init__(self, cap: cv2.VideoCapture, container: Container[Img]):
-        super().__init__()
-        self.container = container
-        self.fs_thread = SourceThread(cap)
-
-        _ = self.fs_thread.ready.connect(
-            self._on_img, Qt.ConnectionType.BlockingQueuedConnection
-        )
-        _ = self.fs_thread.finished.connect(self.finished)
-
-    def start(self):
-        self.fs_thread.start()
-
-    def _on_img(self):
-        self.container.value = self.fs_thread.img
-
-    def interrupt(self):
-        if self.fs_thread.isFinished():
-            self.finished.emit()
-            return
-
-        print("ImageSource.interrupt")
-        self.fs_thread.requestInterruption()
-        
-
-    def wait(self):
-        print("ImageSource.wait")
-        ok = self.fs_thread.wait()
-        print(f"ImageSource.waited {ok}")
-
-
-@dataclass
-class BoxedImage:
-    image: Img = field(default_factory=lambda: Img((0, 0, 3)))
-    objects: list[DetectedObject] = field(default_factory=list)
-
-
-@final
-class Boxer(QObject):
-    def __init__(
-        self, model_path: Path, img: Container[Img], boxed: Container[BoxedImage]
-    ):
-        super().__init__()
-        self.model_path: Path = model_path
-        self.model: Model = YOLO(model_path)
-        self.unknown_id_count: int = 0
-        self.img = img
-        self.boxed = boxed
-
-        _ = self.img.updated.connect(self.on_updated)
-
-    def on_updated(self):
-        image = self.img.value
-        if image is None:
-            self.boxed.value = None
-            return
-
-        results = self.model.track(
-            image, persist=True, show=False, verbose=False, tracker="bytetrack.yaml"
-        )
-
-        objects = list[DetectedObject]()
-
-        if results[0].boxes:
-            for box in results[0].boxes:
-                if box.id is None:
-                    self.unknown_id_count += 1
-                    id = -self.unknown_id_count
-                else:
-                    id = int(box.id[0])
-
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-
-                klass = int(box.cls[0])
-                if klass > 1:
-                    continue
-                    
-                obj = DetectedObject(
-                    id=int(id),
-                    klass=Klass(klass),
-                    confidence=(float(box.conf[0])),
-                    rect=QRect(QPoint(x1, y1), QPoint(x2, y2)),
-                )
-                objects.append(obj)
-
-        self.boxed.value = BoxedImage(
-            image=image,
-            objects=objects,
-        )
-
-
-@final
 class BoxerFilter(QObject):
-    def __init__(self, input: Container[BoxedImage], state: State):
+    def __init__(self, state: State):
         super().__init__()
         self.input = input
         self.state = state
         self.add_fake_eggs = False
         self.f = False
-        self.chickens = False 
+        self.chickens = False
+        self.last = time()
+        self.cnt = 0
 
-        _ = self.input.updated.connect(self.on_updated)
+    def set_add_fake_eggs(self, f: bool):
+        self.add_fake_eggs = f
 
-    def set_f(self, f):
+    def set_f(self, f: bool):
         self.f = f
 
-    def set_chickens(self, chickens):
+    def set_chickens(self, chickens: bool):
         self.chickens = chickens
 
-    def on_updated(self):
+    def on_updated(self, new_frame: NewFrame):
         # TODO: keep track of ids, for new ids - strict confidence level check, for old - lax?
         # TODO: naming, here or in the BoxesLayer?
         # TODO: keep box for id for some time, then delete
+        self.cnt += 1
+        if self.cnt == 100:
+            self.cnt = 0
+            cur = time()
+            delta = cur - self.last
+            self.last = cur
+            print(1 / delta * 100)
 
-        boxed = self.input.value
-        if boxed is None:
-            self.state.reset()
-            return
-
-        self.state.img = boxed.image
+        self.state.img = new_frame.img
         self.state.image_updated.emit()
 
         self.state.remove_all_objects()
@@ -240,27 +104,39 @@ class BoxerFilter(QObject):
                         1000000 + idx,
                         Klass.Egg,
                         0.9,
-                        rect,
+                        rect.left(),
+                        rect.top(),
+                        rect.right(),
+                        rect.bottom(),
                     )
                 )
 
         if not self.f:
             self.state.all_egg_ids = set()
 
-        for obj in chain(boxed.objects, fake_eggs):
+        for obj in chain(new_frame.objects, fake_eggs):
             if obj.confidence < 0.75:
                 continue
-            
+
             if self.chickens and obj.klass == Klass.Chicken:
                 continue
+            info = ObjectInfo(
+                obj.id,
+                obj.klass,
+                obj.confidence,
+                QRect(QPoint(obj.x1, obj.y1), QPoint(obj.x2, obj.y2)),
+            )
 
-            self.state.objects[obj.id] = obj
+            self.state.objects[obj.id] = info
             if obj.klass == Klass.Chicken:
                 self.state.chickens[obj.id] = ChickenInfo(
-                    visible=True, name=generate_name(style="capital", seed=obj.id), obj=obj, eggs=[]
+                    visible=True,
+                    name=generate_name(style="capital", seed=obj.id),
+                    obj=info,
+                    eggs=[],
                 )
             else:
-                self.state.eggs[obj.id] = EggInfo(visible=True, obj=obj, chicken=None)
+                self.state.eggs[obj.id] = EggInfo(visible=True, obj=info, chicken=None)
 
         for egg in self.state.eggs.values():
             self.state.all_egg_ids.add(egg.obj.id)
@@ -285,8 +161,8 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.state = State()
-        self.source_container = Container[Img]()
-        self.boxed_container = Container[BoxedImage]()
+        self.runner = DetectionRunner()
+        self.runner.start()
 
         # Video widget
 
@@ -381,22 +257,21 @@ class MainWindow(QWidget):
         #     self.layer_options.scale.toggled.connect(upd)
         #     upd(self.layer_options.scale.isChecked())
 
-        self.is_new = True
-        self.is_restarting = False
-        self.is_closing = False
-        self.source: ImageSource
-        self.boxer: Boxer
-        self.state_updater: BoxerFilter
+
+        self.filter = BoxerFilter(self.state)
+        self.filter.add_fake_eggs = self.options.fake_eggs.isChecked()
+        _ = self.options.fake_eggs.toggled.connect(self.filter.set_add_fake_eggs)
+        self.filter.f = self.layer_options.conv.isChecked()
+        _ = self.layer_options.conv.toggled.connect(self.filter.set_f)
+        self.filter.chickens = self.layer_options.hide_chickens.isChecked()
+        _ = self.layer_options.hide_chickens.toggled.connect(self.filter.set_chickens)
+
+        _ = self.runner.new_frame.connect(self.filter.on_updated)
 
     @override
     def closeEvent(self, event: QCloseEvent, /) -> None:
-        if not self.is_new and not self.is_restarting and not self.is_closing:
-            self.is_closing = True
-            event.ignore()
-            _ = self.source.finished.connect(lambda: self.close())
-            self.source.interrupt()
-        else:
-            super().closeEvent(event)
+        self.runner.stop()
+        super().closeEvent(event)
 
     @override
     def resizeEvent(self, event: QResizeEvent, /) -> None:
@@ -404,90 +279,33 @@ class MainWindow(QWidget):
         return super().resizeEvent(event)
 
     def restart(self):
-        if self.is_restarting:
+        self.runner.stop_frames(self._on_stopped)
+
+    def _on_stopped(self):
+        self.runner.set_model(self.options.model.currentText(), self._on_model)
+
+    def _on_model(self, ok: bool):
+        if not ok:
+            _ = QMessageBox.warning(self, "Nope", "set_model failed")
             return
-        self.is_restarting = True
-
-        if self.is_new:
-            self._restart_prepare()
-        else:
-            self._restart_stop()
-
-    def _restart_stop(self):
-        _ = self.source.finished.connect(
-            self._restart_ensure_stopped, Qt.ConnectionType.SingleShotConnection
-        )
-        self.source.interrupt()
-
-    def _restart_ensure_stopped(self):
-        self.source.wait()
-
-        QTimer.singleShot(0, self._restart_prepare)
-
-    def _restart_prepare(self):
-        if self.options.source_camera.isChecked():
-            self._restart_start("camera", self.options.source_value.text())
-            return
-
-        if self.options.source_file.isChecked():
-            self._restart_start("file", self.options.source_value.text())
-            return
-
-        if not self.options.source_url.isChecked():
-            raise RuntimeError()
-
-        cap_path = multiprocessing.Array(ctypes.c_char, 4096)
-        cap_path.value = b""
-
-        url = self.options.source_value.text()
-
-        cap_proc = WaitProcess.make(
-            self,
-            cap_path,
-            f"download_video_sample('{url}')/'video.mp4'",
-            dry=False,
-        )
-        _ = cap_proc.done.connect(
-            lambda: self._restart_start("file", cap_path.value.decode())
-        )
-        cap_proc.start()
-
-    def _restart_start(self, cap_type: str, cap_value: str):
-        model = self.options.model.currentText()
-
-        if model == "" or cap_value == "":
-            print("aborted")
-            self.is_restarting = False
-            return
-
-        if cap_type == "camera":
-            cap = cv2.VideoCapture(int(cap_value))
-            _ = cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            _ = cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
-        else:
-            cap = cv2.VideoCapture(cap_value)
-            assert cap.isOpened(), f"Error reading video file at: {cap_value}"
-
-        self.is_new = False
-
-        self.source = ImageSource(cap, self.source_container)
-
-        self.boxer = Boxer(
-            Path(model),
-            self.source_container,
-            self.boxed_container,
+        self.runner.set_source(
+            self.options.src_type, self.options.source_value.text(), self._on_source
         )
 
-        self.state_updater = BoxerFilter(self.boxed_container, self.state)
-        self.state_updater.add_fake_eggs = self.options.fake_eggs.isChecked()
-        self.state_updater.f = self.layer_options.conv.isChecked()
-        self.state_updater.chickens = self.layer_options.hide_chickens.isChecked()
-        self.layer_options.conv.toggled.connect(self.state_updater.set_f)
-        self.layer_options.hide_chickens.toggled.connect(self.state_updater.set_chickens)
-        
+    def _on_source(self, ok: bool):
+        if not ok:
+            _ = QMessageBox.warning(self, "Nope", "set_source failed")
+            return
+        self.state.reset()
+        self.runner.start_frames()
 
-        self.is_restarting = False
-        self.source.start()
+
+@dataclass
+class StreamOptions:
+    model: str
+    src_type: SrcType
+    src: str
+    fake_eggs: bool
 
 
 @final
@@ -615,73 +433,13 @@ class Options(QFrame):
     def on_restart_pressed(self):
         self.changed.emit()
 
-
-P = ParamSpec("P")
-
-
-@final
-class WaitProcess(QFrame):
-    done = Signal()
-
-    @staticmethod
-    def _make(ret: SynchronizedString, request: str, dry: bool):
-        from cv_project.training.recipes import make
-
-        path = make(request, dry=dry)
-        ret.value = str(path).encode()
-
-    @staticmethod
-    def make(parent: MainWindow, ret: SynchronizedString, request: str, dry: bool):
-        return WaitProcess(
-            parent, f"make({request})", WaitProcess._make, ret, request, dry
-        )
-
-    def __init__(
-        self,
-        parent: MainWindow,
-        info: str,
-        target: Callable[P, None],
-        *args: P.args,
-        **kwargs: P.kwargs,
-    ):
-        super().__init__(parent=parent)
-
-        self.move(0, 0)
-        self.resize(parent.size())
-        _ = parent.resized.connect(self.resize)
-
-        self.setWindowOpacity(0.5)
-        self.setStyleSheet("background-color: rgba(255, 255, 255, 128); color: black;")
-        self.show()
-
-        layout = QVBoxLayout(self)
-        layout.addStretch()
-
-        self.status = QLabel(f"Waiting for {info}")
-        self.status.setStyleSheet("background-color: rgba(255, 255, 255, 0);")
-        layout.addWidget(self.status)
-        self.stop = QPushButton("Stop")
-        self.stop.setStyleSheet("background-color: rgba(255, 255, 255, 255);")
-        layout.addWidget(self.stop)
-
-        layout.addStretch()
-
-        _ = self.stop.pressed.connect(lambda: self.process.kill())
-
-        self.process = multiprocessing.Process(target=target, args=args, kwargs=kwargs)
-
-    def start(self):
-        self.show()
-        self.process.start()
-        QTimer.singleShot(100, self.check)
-
-    def check(self):
-        if self.process.is_alive():
-            QTimer.singleShot(100, self.check)
-        else:
-            self.process.join()
-            self.done.emit()
-            self.deleteLater()
+    @property
+    def src_type(self) -> SrcType:
+        if self.source_camera.isChecked():
+            return "camera"
+        if self.source_file.isChecked():
+            return "video"
+        return "video_url"
 
 
 def main():
@@ -689,5 +447,10 @@ def main():
     window = MainWindow()
     window.resize(800, 600)
     window.show()
+
+    def cleanup():
+        pass
+
+    _ = app.aboutToQuit.connect(cleanup)
 
     sys.exit(app.exec())
