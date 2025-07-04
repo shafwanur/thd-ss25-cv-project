@@ -13,6 +13,7 @@ dependencies = [
     "requests>=2.32.3",
     "ultralytics>=8.3.144",
     "yt-dlp>=2025.6.25",
+    "names_generator",
 ]
 
 [project.scripts]

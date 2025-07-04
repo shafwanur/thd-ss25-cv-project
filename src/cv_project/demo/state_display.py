@@ -198,7 +198,7 @@ class LabelsLayer(StateDisplayLayer):
     @override
     def on_transform_updated(self):
         self.update_positions()
-
+    
     def update_positions(self):
         for id, label in self.labels.items():
             obj = self.obj(id)
@@ -231,11 +231,19 @@ class LabelsLayer(StateDisplayLayer):
         info2.setStyleSheet("background-color: transparent;")
         layout.addWidget(info2)
 
+        info3 = QLabel(textFormat=Qt.TextFormat.MarkdownText)
+        info3.setStyleSheet("background-color: transparent;")
+        layout.addWidget(info3)
+
         if obj.klass == Klass.Chicken:
             info2.show()
             info2.setText(f"**Eggs**: {len(self.state.chickens[id].eggs)}")
+
+            info3.show()
+            info3.setText(f"Name: {self.state.chickens[id].name}")
         else:
             info2.hide()
+            info3.hide()
 
         frame.adjustSize()
         frame.show()

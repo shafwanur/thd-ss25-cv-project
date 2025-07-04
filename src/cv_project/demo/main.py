@@ -1,12 +1,14 @@
+import sys
 import ctypes
 import multiprocessing
-import sys
+from pathlib import Path
+from itertools import chain
+from ultralytics import solutions
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from itertools import chain
-from multiprocessing.sharedctypes import SynchronizedString
-from pathlib import Path
+from names_generator import generate_name
 from typing import ParamSpec, cast, final, override
+from multiprocessing.sharedctypes import SynchronizedString
 
 import cv2
 from PySide6.QtCore import (
@@ -169,7 +171,7 @@ class Boxer(QObject):
                 klass = int(box.cls[0])
                 if klass > 1:
                     continue
-
+                    
                 obj = DetectedObject(
                     id=int(id),
                     klass=Klass(klass),
@@ -230,13 +232,13 @@ class BoxerFilter(QObject):
                 )
 
         for obj in chain(boxed.objects, fake_eggs):
-            if obj.confidence < 0:
+            if obj.confidence < 0.75:
                 continue
-
+            
             self.state.objects[obj.id] = obj
             if obj.klass == Klass.Chicken:
                 self.state.chickens[obj.id] = ChickenInfo(
-                    visible=True, obj=obj, eggs=[]
+                    visible=True, name=generate_name(style="capital", seed=obj.id), obj=obj, eggs=[]
                 )
             else:
                 self.state.eggs[obj.id] = EggInfo(visible=True, obj=obj, chicken=None)
@@ -505,6 +507,7 @@ class DisplayOptions(QFrame):
             QCheckBox("Show labels"),
             QCheckBox("Show connections"),
             QCheckBox("Show image"),
+            QCheckBox("Conveyor Belt"),
         ]
         for layer in self.layers:
             layer.setChecked(True)

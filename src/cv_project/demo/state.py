@@ -27,6 +27,7 @@ class DetectedObject:
 @dataclass
 class ChickenInfo:
     visible: bool
+    name: str
     obj: DetectedObject
     eggs: list["EggInfo"]
 
