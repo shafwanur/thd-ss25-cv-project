@@ -125,14 +125,19 @@ def prepare_data(
     output: Path = DIR,
     label2id: dict[str, int],
     drop_groups: bool,
+    merge_test: bool,
 ):
-    splits = ["train", "validation", "test"]
+    blacklisted_ids = set[str]()
 
-    for split in splits:
-        images = output / "images" / split
-        images.mkdir(parents=True)
-        labels = output / "labels" / split
-        labels.mkdir(parents=True)
+    for split in SPLITS:
+        out_split = split
+        if merge_test and split == "test":
+            out_split = "train"
+
+        images = output / "images" / out_split
+        images.mkdir(parents=True, exist_ok=True)
+        labels = output / "labels" / out_split
+        labels.mkdir(parents=True, exist_ok=True)
 
         with filtered[split].open() as f:
             for line in dropwhile(lambda x: x.startswith("ImageID,"), f):
@@ -140,7 +145,13 @@ def prepare_data(
                 id, _, label, _, xmin, xmax, ymin, ymax, _, _, is_group_of, _, _, *_ = (
                     line.split(",")
                 )
-                if drop_groups and is_group_of == "1":
+                if id in blacklisted_ids:
+                    print(f"{split}/{id} was blacklisted before")
+                    continue
+
+                if drop_groups and int(is_group_of) != 0:
+                    print(f"{split}/{id} has groups")
+                    blacklisted_ids.add(id)
                     continue
 
                 xmin = float(xmin)
@@ -189,6 +200,7 @@ prepared_data_with_groups = prepare_data(
     filtered_images=filtered_images,
     label2id=label_map,
     drop_groups=False,
+    merge_test=False,
 )
 
 prepared_with_groups = mk_desc(
@@ -201,6 +213,7 @@ prepared_data_without_groups = prepare_data(
     filtered_images=filtered_images,
     label2id=label_map,
     drop_groups=True,
+    merge_test=False,
 )
 
 prepared_without_groups = mk_desc(
@@ -210,25 +223,40 @@ prepared_without_groups = mk_desc(
 
 
 @output.keep
-def train_(*, desc: Path, output: Path = DIR, epochs: int):
+def train(*, desc: Path, output: Path = DIR, base: str, epochs: int, batch: int):
     from ultralytics import YOLO
 
-    model = YOLO("yolo11n.pt")
-    _results = model.train(data=desc, epochs=epochs, imgsz=640, project=output)
+    model = YOLO(base)
+    _results = model.train(
+        data=desc, epochs=epochs, imgsz=640, batch=batch, project=output
+    )
 
 
-def train(*, groups: bool = True, epochs: int):
-    if groups:
-        desc = prepared_with_groups
-    else:
-        desc = prepared_without_groups
-    return train_(desc=desc / "desc.yaml", epochs=epochs)
+final_data = prepare_data(
+    filtered=filtered_boxes,
+    filtered_images=filtered_images,
+    label2id=label_map,
+    drop_groups=True,
+    merge_test=True,
+)
+final_data_desc = mk_desc(
+    prepared=final_data,
+    class_names=names_of_interest,
+)
+
+model_g0t0_e100ban = train(
+    desc=final_data_desc / "desc.yaml", base="yolo11n.pt", epochs=100, batch=-1
+)
+model_g0t0_e50bas = train(
+    desc=final_data_desc / "desc.yaml", base="yolo11s.pt", epochs=50, batch=-1
+)
 
 
-def test(*, groups: bool = True, epochs: int):
-    model = train(groups=groups, epochs=epochs)
+def test(*, model: Path, split: str = "test"):
     data = prepared_data_with_groups
-    return run_prediction(model / "train/weights/best.pt", images=data / "images/test")
+    return run_prediction(
+        model / "train/weights/best.pt", images=data / f"images/{split}"
+    )
 
 
 def make(expr: str, dry: bool = False, trace: bool = False):
