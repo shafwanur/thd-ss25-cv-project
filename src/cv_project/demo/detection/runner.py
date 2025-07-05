@@ -31,7 +31,7 @@ def run_detection(conn: Connection):
     try:
         p.run()
     finally:
-        p.reset_images()
+        p.reset_source()
 
 
 @dataclass

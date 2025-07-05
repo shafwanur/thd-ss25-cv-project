@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QSizePolicy,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -59,6 +60,8 @@ class BoxerFilter(QObject):
         self.add_fake_eggs = False
         self.f = False
         self.chickens = False
+        self.confidence_threashold: int = 50
+
         self.last = time()
         self.cnt = 0
 
@@ -70,6 +73,9 @@ class BoxerFilter(QObject):
 
     def set_chickens(self, chickens: bool):
         self.chickens = chickens
+
+    def set_min_confidence(self, x: int):
+        self.confidence_threashold = x
 
     def on_updated(self, new_frame: NewFrame):
         # TODO: keep track of ids, for new ids - strict confidence level check, for old - lax?
@@ -115,7 +121,7 @@ class BoxerFilter(QObject):
             self.state.all_egg_ids = set()
 
         for obj in chain(new_frame.objects, fake_eggs):
-            if obj.confidence < 0.75:
+            if int(obj.confidence * 100) < self.confidence_threashold:
                 continue
 
             if self.chickens and obj.klass == Klass.Chicken:
@@ -264,6 +270,10 @@ class MainWindow(QWidget):
         _ = self.layer_options.conv.toggled.connect(self.filter.set_f)
         self.filter.chickens = self.layer_options.hide_chickens.isChecked()
         _ = self.layer_options.hide_chickens.toggled.connect(self.filter.set_chickens)
+        self.filter.set_min_confidence(self.layer_options.confidence.value())
+        _ = self.layer_options.confidence.valueChanged.connect(
+            self.filter.set_min_confidence
+        )
 
         _ = self.runner.new_frame.connect(self.filter.on_updated)
 
@@ -357,6 +367,14 @@ class DisplayOptions(QFrame):
 
         layout.addSpacing(20)
 
+        self.confidence = QSlider(Qt.Orientation.Horizontal)
+        self.confidence.setMinimum(0)
+        self.confidence.setMaximum(100)
+        self.confidence.setValue(50)
+        layout.addWidget(self.confidence)
+
+        layout.addSpacing(20)
+
         self.conv = QCheckBox("Conveyor Belt")
         self.conv.setChecked(False)
         layout.addWidget(self.conv)
@@ -397,7 +415,7 @@ class Options(QFrame):
         # END Model choice
 
         layout.addWidget(QLabel("**Source**", textFormat=Qt.TextFormat.MarkdownText))
-        self.default_camera = "0"
+        self.default_camera = "0:640x360"
         self.source_camera = QRadioButton("camera")
         _ = self.source_camera.toggled.connect(
             lambda on: self.source_value.setText(self.default_camera) if on else None

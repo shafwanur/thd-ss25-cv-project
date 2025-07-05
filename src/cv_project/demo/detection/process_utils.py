@@ -22,7 +22,7 @@ class Source(ABC):
 
 class CameraSource(Source):
     def __init__(self, spec: str):
-        idx, wh = spec.split(",")
+        idx, wh = spec.split(":")
         w, h = map(int, wh.split("x"))
 
         self.cap: cv2.VideoCapture = cv2.VideoCapture(int(idx))

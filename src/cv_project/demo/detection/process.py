@@ -80,7 +80,7 @@ class Processor:
                 self.model = YOLO(msg.model_path)
                 return ReplySetModel(True)
             case CmdSetSrc():
-                self.reset_images()
+                self.reset_source()
 
                 self.failing = False
 
@@ -130,11 +130,17 @@ class Processor:
             case CmdGetFrame():
                 return ReplyGetFrame(False, -1, [])
 
-    def reset_images(self):
+    def reset_source(self):
+        if self.src is None:
+            return
+
         for o in self.images:
             o.shm.close()
             o.shm.unlink()
         self.images = []
+
+        self.src.close()
+        self.src = None
 
     def prepare_ignore(self, o: ImageObj):
         try:
