@@ -1,5 +1,5 @@
+import time
 from abc import ABC
-from sqlite3 import Connection
 from typing import Any, cast, override
 
 import cv2
@@ -29,6 +29,8 @@ class CameraSource(Source):
         _ = self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
         _ = self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
 
+        print("CameraSource fps", self.cap.get(cv2.CAP_PROP_FPS))
+
     @override
     def read(self, img: Img) -> bool:
         ok, _ = self.cap.read(img)
@@ -50,10 +52,56 @@ class VideoSource(Source):
         print("VideoSource from", path)
         self.cap: cv2.VideoCapture = cv2.VideoCapture(path)
 
+        self.frame_count: int = 0
+        self.start_time: int = -1
+        self.start_ts: int = -1
+        self.cur_time: int = -1
+        self.cur_ts: int = -1
+
+        print("VideoSource fps", self.cap.get(cv2.CAP_PROP_FPS))
+
+    def upd_time(self):
+        self.cur_time = int(time.time() * 1000)
+
+    def upd_ts(self):
+        self.cur_ts = int(self.cap.get(cv2.CAP_PROP_POS_MSEC))
+
+    def time(self):
+        return self.cur_time - self.start_time
+
+    def ts(self):
+        return self.cur_ts - self.start_ts
+
     @override
     def read(self, img: Img) -> bool:
         ok, _ = self.cap.read(img)
-        return ok
+        if not ok:
+            return False
+        self.frame_count += 1
+        if self.frame_count == 1:
+            return True
+
+        self.upd_time()
+        self.upd_ts()
+        if self.frame_count == 2:
+            self.start_time = self.cur_time
+            self.start_ts = self.cur_ts
+            return True
+
+        if self.ts() < self.time() - 100:
+            # Skip late images
+            while self.ts() < self.time():
+                # print("skip late image", self.ts(), self.time())
+                ok, _ = self.cap.read(img)
+                if not ok:
+                    return False
+                self.upd_ts()
+            self.upd_time()
+
+        while self.time() < self.ts():
+            time.sleep(0.001)
+            self.upd_time()
+        return True
 
     @override
     def close(self):

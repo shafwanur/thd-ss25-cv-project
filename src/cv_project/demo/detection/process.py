@@ -6,8 +6,6 @@ import numpy as np
 from ultralytics import YOLO
 from ultralytics.engine.model import Model
 
-from cv_project.training.recipes import make
-
 from ..utils import Img
 from .process_utils import Source, mk_source
 from .schemas import (
@@ -61,6 +59,7 @@ class Processor:
                             break
                 if prepared:
                     continue
+                # print("all frames ready")
                 msg = self.conn.recv()
 
             try:
@@ -103,9 +102,6 @@ class Processor:
             case CmdGetFrame():
                 assert self.model is not None
 
-                if self.failing:
-                    raise RuntimeError("self.failing is set")
-
                 if self.cur_img < 0:
                     self.cur_img = 0
                 else:
@@ -117,10 +113,8 @@ class Processor:
                 o = self.images[self.cur_img]
 
                 if not o.ready:
-                    # print("not prepared")
                     self.prepare_raise(o)
                 else:
-                    # print("prepared")
                     pass
 
                 return o.prepared
