@@ -1,0 +1,17 @@
+data
+runs
+*.pt
+tmp
+.venv
+dataset
+debug
+csv
+tests
+.gitignore
+*.egg-info
+train
+valid
+test
+tests
+data.yaml
+__pycache__/
