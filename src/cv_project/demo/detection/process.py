@@ -1,3 +1,4 @@
+import traceback
 from dataclasses import dataclass
 from multiprocessing.connection import Connection
 from multiprocessing.shared_memory import SharedMemory
@@ -40,9 +41,17 @@ class Processor:
         self.src: Source | None = None
         self.images: list[ImageObj] = []
 
-        self.cur_img: int = -1
+        self.prev_img: int = -1
+        self.sent_img: int = -1
         self.unknown_id_count: int = -1
         self.failing: bool = False
+
+    def next_img(self, idx: int):
+        res = idx + 1
+        if res == len(self.images):
+            return 0
+        assert res >= 0 and res < len(self.images)
+        return res
 
     def run(self):
         while True:
@@ -63,16 +72,17 @@ class Processor:
                 msg = self.conn.recv()
 
             try:
-                resp = self.dispatch(msg)
-            except Exception as exc:
-                print(exc)
+                resp = self.on_message(msg)
+            except Exception:
+                print("on_message failed", msg)
+                print(traceback.format_exc())
                 resp = self.on_failure(msg)
             self.conn.send(resp)
 
             if isinstance(resp, MsgTerminated):
                 return
 
-    def dispatch(self, msg: Cmd) -> CmdReply:
+    def on_message(self, msg: Cmd) -> CmdReply:
         match msg:
             case CmdTerminate():
                 return MsgTerminated()
@@ -82,8 +92,6 @@ class Processor:
             case CmdSetSrc():
                 self.reset_source()
 
-                self.failing = False
-
                 self.src = mk_source(msg.src_type, msg.src_value)
                 w, h = self.src.size()
                 shm_size = w * h * 3
@@ -91,7 +99,7 @@ class Processor:
 
                 names = list[str]()
 
-                for idx in range(2):
+                for idx in range(3):
                     shm = SharedMemory(create=True, size=shm_size)
                     img: Img = np.ndarray(shape, dtype=np.uint8, buffer=shm.buf)
 
@@ -102,20 +110,19 @@ class Processor:
             case CmdGetFrame():
                 assert self.model is not None
 
-                if self.cur_img < 0:
-                    self.cur_img = 0
+                if self.prev_img != -1:
+                    o = self.images[self.prev_img]
+                    assert o.ready
+                    o.ready = False
+                if self.sent_img == -1:
+                    self.sent_img = 0
                 else:
-                    self.images[self.cur_img].ready = False
-                    self.cur_img += 1
-                    if self.cur_img >= len(self.images):
-                        self.cur_img = 0
-
-                o = self.images[self.cur_img]
+                    self.prev_img = self.sent_img
+                    self.sent_img = self.next_img(self.sent_img)
+                o = self.images[self.sent_img]
 
                 if not o.ready:
                     self.prepare_raise(o)
-                else:
-                    pass
 
                 return o.prepared
 
@@ -138,6 +145,10 @@ class Processor:
             o.shm.close()
             o.shm.unlink()
         self.images = []
+
+        self.sent_img = -1
+        self.prev_img = -1
+        self.failing = False
 
         self.src.close()
         self.src = None
@@ -169,6 +180,7 @@ class Processor:
 
         ok = self.src.read(o.img)
         if not ok:
+            print("no frame read")
             return False
 
         results = self.model.track(
