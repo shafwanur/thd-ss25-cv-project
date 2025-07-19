@@ -1,5 +1,6 @@
 import sys
 from dataclasses import dataclass
+from enum import Enum
 from itertools import chain
 from pathlib import Path
 from time import time
@@ -31,6 +32,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QSizePolicy,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -50,6 +52,66 @@ from .utils import (
 )
 
 
+class Preset(Enum):
+    """Presets for the presentation"""
+
+    NONE = "No preset"
+    CONVEYOR = "Video - Conveyor"
+    CHICKENS = "Video - Chickens"
+    TOYS = "Video - Toys"
+    LIVE_OBS = "Live OBS"
+
+
+def set_preset(preset: Preset, options: "Options", display_options: "DisplayOptions"):
+    match preset:
+        case Preset.NONE:
+            pass
+        case Preset.CONVEYOR:
+            options.model.setCurrentText("models/g0t0_e100b20s.pt")
+            options.source_file.setChecked(True)
+            options.source_value.setText("./conveyor.mp4")
+            display_options.layers[LayerId.BOXES.value].setChecked(True)
+            display_options.layers[LayerId.LABELS.value].setChecked(True)
+            display_options.layers[LayerId.CONNECTIONS.value].setChecked(False)
+            display_options.layers[LayerId.IMAGE.value].setChecked(True)
+            display_options.confidence.setValue(60)
+            display_options.conv.setChecked(True)
+            display_options.hide_chickens.setChecked(True)
+        case Preset.CHICKENS:
+            options.model.setCurrentText("models/g0t0_e100b20s.pt")
+            options.source_file.setChecked(True)
+            options.source_value.setText("./video.mp4")
+            display_options.layers[LayerId.BOXES.value].setChecked(True)
+            display_options.layers[LayerId.LABELS.value].setChecked(True)
+            display_options.layers[LayerId.CONNECTIONS.value].setChecked(False)
+            display_options.layers[LayerId.IMAGE.value].setChecked(True)
+            display_options.confidence.setValue(30)
+            display_options.conv.setChecked(False)
+            display_options.hide_chickens.setChecked(False)
+        case Preset.TOYS:
+            options.model.setCurrentText("models/g0t0_e100b20s.pt")
+            options.source_file.setChecked(True)
+            options.source_value.setText("./chickeggs.mp4")
+            display_options.layers[LayerId.BOXES.value].setChecked(True)
+            display_options.layers[LayerId.LABELS.value].setChecked(True)
+            display_options.layers[LayerId.CONNECTIONS.value].setChecked(True)
+            display_options.layers[LayerId.IMAGE.value].setChecked(True)
+            display_options.confidence.setValue(0)
+            display_options.conv.setChecked(False)
+            display_options.hide_chickens.setChecked(False)
+        case Preset.LIVE_OBS:
+            options.model.setCurrentText("models/g0t0_e100b20s.pt")
+            options.source_camera.setChecked(True)
+            options.source_value.setText("0:640x480")
+            display_options.layers[LayerId.BOXES.value].setChecked(True)
+            display_options.layers[LayerId.LABELS.value].setChecked(True)
+            display_options.layers[LayerId.CONNECTIONS.value].setChecked(True)
+            display_options.layers[LayerId.IMAGE.value].setChecked(True)
+            display_options.confidence.setValue(70)
+            display_options.conv.setChecked(False)
+            display_options.hide_chickens.setChecked(False)
+
+
 @final
 class BoxerFilter(QObject):
     def __init__(self, state: State):
@@ -59,6 +121,8 @@ class BoxerFilter(QObject):
         self.add_fake_eggs = False
         self.f = False
         self.chickens = False
+        self.confidence_threashold: int = 50
+
         self.last = time()
         self.cnt = 0
 
@@ -71,17 +135,20 @@ class BoxerFilter(QObject):
     def set_chickens(self, chickens: bool):
         self.chickens = chickens
 
+    def set_min_confidence(self, x: int):
+        self.confidence_threashold = x
+
     def on_updated(self, new_frame: NewFrame):
         # TODO: keep track of ids, for new ids - strict confidence level check, for old - lax?
         # TODO: naming, here or in the BoxesLayer?
         # TODO: keep box for id for some time, then delete
         self.cnt += 1
-        if self.cnt == 100:
-            self.cnt = 0
-            cur = time()
-            delta = cur - self.last
+        cur = time()
+        delta = cur - self.last
+        if delta > 1:
+            print(self.cnt / delta)
             self.last = cur
-            print(1 / delta * 100)
+            self.cnt = 0
 
         self.state.img = new_frame.img
         self.state.image_updated.emit()
@@ -115,7 +182,7 @@ class BoxerFilter(QObject):
             self.state.all_egg_ids = set()
 
         for obj in chain(new_frame.objects, fake_eggs):
-            if obj.confidence < 0.75:
+            if int(obj.confidence * 100) < self.confidence_threashold:
                 continue
 
             if self.chickens and obj.klass == Klass.Chicken:
@@ -189,12 +256,16 @@ class MainWindow(QWidget):
 
         video_vert.addStretch()
 
+        self.action = QPushButton()
+        _ = self.action.pressed.connect(self._on_action)
+        video_vert.addWidget(self.action)
+
         # END Video widget
 
         first_row_widget = QWidget()
         first_row = QHBoxLayout(first_row_widget)
         first_row.setContentsMargins(0, 0, 0, 0)
-        first_row.addWidget(video_widget)
+        first_row.addWidget(video_widget, stretch=1)
 
         side_column_widget = QWidget()
         side_column = QVBoxLayout(side_column_widget)
@@ -205,9 +276,10 @@ class MainWindow(QWidget):
         side_column.addWidget(self.info)
 
         self.layer_options = DisplayOptions()
-        self.layer_options.setSizePolicy(
-            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding
-        )
+        # self.layer_options.setSizePolicy(
+        #     QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding
+        # )
+
         side_column.addWidget(self.layer_options)
 
         first_row.addWidget(side_column_widget)
@@ -220,7 +292,12 @@ class MainWindow(QWidget):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
         )
         self.l.addWidget(self.options)
-        _ = self.options.changed.connect(self.restart)
+
+        _ = self.options.preset.currentIndexChanged.connect(
+            lambda _: set_preset(
+                self.options.preset.currentData(), self.options, self.layer_options
+            )
+        )
 
         # Connect layer options
         def mk_upd(layer: LayerId):
@@ -264,8 +341,16 @@ class MainWindow(QWidget):
         _ = self.layer_options.conv.toggled.connect(self.filter.set_f)
         self.filter.chickens = self.layer_options.hide_chickens.isChecked()
         _ = self.layer_options.hide_chickens.toggled.connect(self.filter.set_chickens)
+        self.filter.set_min_confidence(self.layer_options.confidence.value())
+        _ = self.layer_options.confidence.valueChanged.connect(
+            self.filter.set_min_confidence
+        )
 
         _ = self.runner.new_frame.connect(self.filter.on_updated)
+        _ = self.runner.frames_started.connect(self._on_started)
+        _ = self.runner.frames_stopped.connect(self._on_stopped)
+
+        self.set_action("Start")
 
     @override
     def closeEvent(self, event: QCloseEvent, /) -> None:
@@ -277,16 +362,34 @@ class MainWindow(QWidget):
         self.resized.emit(event.size())
         return super().resizeEvent(event)
 
-    def restart(self):
-        self.runner.stop_frames(self._on_stopped)
+    def _on_action(self):
+        if self.action.text() == "Start":
+            self._start()
+            self.set_action("Waiting...")
+        elif self.action.text() == "Clear":
+            self.clear()
+        else:
+            assert self.action.text() == "Stop"
+            self.runner.stop_frames()
+            self.set_action("Waiting...")
+
+    def _on_started(self):
+        self.set_action("Stop")
 
     def _on_stopped(self):
+        self.set_action("Clear")
+
+    def clear(self):
         self.state.reset()
+        self.set_action("Start")
+
+    def _start(self):
         self.runner.set_model(self.options.model.currentText(), self._on_model)
 
     def _on_model(self, ok: bool):
         if not ok:
             _ = QMessageBox.warning(self, "Nope", "set_model failed")
+            self.clear()
             return
         self.runner.set_source(
             self.options.src_type, self.options.source_value.text(), self._on_source
@@ -295,9 +398,30 @@ class MainWindow(QWidget):
     def _on_source(self, ok: bool):
         if not ok:
             _ = QMessageBox.warning(self, "Nope", "set_source failed")
+            self.clear()
             return
-        self.state.reset()
+
         self.runner.start_frames()
+
+    def set_action(self, act: str):
+        self.action.setText(act)
+        if act == "Start":
+            self.action.setDisabled(False)
+            self.action.setStyleSheet("background-color: #AFEFE4; color: black")
+            self.options.preset.setDisabled(False)
+            self.options.preset.setCurrentIndex(0)
+        elif act == "Stop":
+            self.action.setDisabled(False)
+            self.action.setStyleSheet("background-color: #EFB0BB; color: black")
+            self.options.preset.setDisabled(True)
+        elif act == "Clear":
+            self.action.setDisabled(False)
+            self.action.setStyleSheet("background-color: #EFE0BB; color: black")
+            self.options.preset.setDisabled(True)
+        else:
+            self.action.setDisabled(True)
+            self.action.setStyleSheet("background-color: #BBBBBB; color: black")
+            self.options.preset.setDisabled(True)
 
 
 @dataclass
@@ -313,6 +437,7 @@ class DisplayInfo(QFrame):
     def __init__(self, state: State):
         super().__init__()
         self.state = state
+        _ = self.state.was_reset.connect(self.update_count)
         _ = self.state.object_added.connect(self.update_count)
         _ = self.state.object_removed.connect(self.update_count)
 
@@ -355,13 +480,23 @@ class DisplayOptions(QFrame):
             layer.setChecked(True)
             layout.addWidget(layer)
 
+        # self.setFixedWidth(self.layers[2].sizeHint().width() * 3)
+
         layout.addSpacing(20)
 
-        self.conv = QCheckBox("Conveyor Belt")
+        self.confidence = QSlider(Qt.Orientation.Horizontal)
+        self.confidence.setMinimum(0)
+        self.confidence.setMaximum(100)
+        self.confidence.setValue(50)
+        layout.addWidget(self.confidence)
+
+        layout.addSpacing(20)
+
+        self.conv = QCheckBox("Conveyor belt")
         self.conv.setChecked(False)
         layout.addWidget(self.conv)
 
-        self.hide_chickens = QCheckBox("Hide Chickens")
+        self.hide_chickens = QCheckBox("Hide chickens")
         self.hide_chickens.setChecked(False)
         layout.addWidget(self.hide_chickens)
 
@@ -373,13 +508,17 @@ class DisplayOptions(QFrame):
 
 @final
 class Options(QFrame):
-    changed = Signal()
-
     def __init__(self):
         super().__init__()
         self.setStyleSheet("background-color: lightgray; color: black;")
 
         layout = QVBoxLayout(self)
+
+        layout.addWidget(QLabel("**Preset**", textFormat=Qt.TextFormat.MarkdownText))
+        self.preset = QComboBox()
+        for preset in Preset:
+            self.preset.addItem(preset.value, preset)
+        layout.addWidget(self.preset)
 
         # Model choice
 
@@ -397,7 +536,7 @@ class Options(QFrame):
         # END Model choice
 
         layout.addWidget(QLabel("**Source**", textFormat=Qt.TextFormat.MarkdownText))
-        self.default_camera = "0"
+        self.default_camera = "0:640x360"
         self.source_camera = QRadioButton("camera")
         _ = self.source_camera.toggled.connect(
             lambda on: self.source_value.setText(self.default_camera) if on else None
@@ -421,17 +560,10 @@ class Options(QFrame):
         self.source_value = QLineEdit()
         layout.addWidget(self.source_value)
 
+        self.source_camera.setChecked(True)
+
         self.fake_eggs = QCheckBox("Fake eggs")
-        layout.addWidget(self.fake_eggs)
-
-        self.restart = QPushButton("Restart")
-        layout.addWidget(self.restart)
-        _ = self.restart.pressed.connect(self.on_restart_pressed)
-
-        self.source_camera.toggle()
-
-    def on_restart_pressed(self):
-        self.changed.emit()
+        # layout.addWidget(self.fake_eggs)
 
     @property
     def src_type(self) -> SrcType:
@@ -445,6 +577,7 @@ class Options(QFrame):
 def main():
     app = QApplication(sys.argv)
     window = MainWindow()
+    window.setWindowTitle("Chickens & Eggs - Demo")
     window.resize(800, 600)
     window.show()
 

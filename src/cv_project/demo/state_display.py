@@ -33,8 +33,8 @@ from .utils import (
 
 
 class LayerId(Enum):
-    BOXES = 0
     LABELS = 1
+    BOXES = 0
     CONNECTIONS = 2
     IMAGE = 3
 
@@ -43,6 +43,8 @@ class LayerId(Enum):
 class LayeredDisplay(QWidget):
     def __init__(self, state: State):
         super().__init__()
+
+        self.setFixedSize(640, 360)
 
         self.state = state
         _ = self.state.image_updated.connect(self.on_image)
@@ -66,7 +68,6 @@ class LayeredDisplay(QWidget):
     #         self.setMinimumSize(img_size(self.state.img))
 
     def init(self):
-        self.setFixedSize(640, 360)
         self.layers.append(BoxesLayer(self.state))
         self.layers.append(LabelsLayer(self.state))
         self.layers.append(ConnectionLayer(self.state))
@@ -197,7 +198,7 @@ class LabelsLayer(StateDisplayLayer):
     @override
     def on_transform_updated(self):
         self.update_positions()
-    
+
     def update_positions(self):
         for id, label in self.labels.items():
             obj = self.obj(id)
@@ -222,9 +223,12 @@ class LabelsLayer(StateDisplayLayer):
 
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(4, 4, 4, 4)
-        
+
         if obj.klass == Klass.Chicken:
-            info1 = QLabel(f"**Confidence**: {round(obj.confidence * 100, 2)}", textFormat=Qt.TextFormat.MarkdownText)
+            info1 = QLabel(
+                f"**Confidence**: {round(obj.confidence, 2)}",
+                textFormat=Qt.TextFormat.MarkdownText,
+            )
         else:
             info1 = QLabel(f"**ID**: {id}", textFormat=Qt.TextFormat.MarkdownText)
         info1.setStyleSheet("background-color: transparent;")
@@ -243,7 +247,7 @@ class LabelsLayer(StateDisplayLayer):
             info2.setText(f"**Eggs**: {len(self.state.chickens[id].eggs)}")
 
             info3.show()
-            info3.setText(f"Name: {self.state.chickens[id].name}")
+            info3.setText(f"**Name**: {self.state.chickens[id].name}")
         else:
             info2.hide()
             info3.hide()

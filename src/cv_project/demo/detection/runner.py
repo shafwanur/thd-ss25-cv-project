@@ -17,6 +17,7 @@ from .schemas import (
     CmdSetSrc,
     CmdTerminate,
     DetectedObject,
+    MsgTerminated,
     ReplyGetFrame,
     ReplySetModel,
     ReplySetSrc,
@@ -31,7 +32,7 @@ def run_detection(conn: Connection):
     try:
         p.run()
     finally:
-        p.reset_images()
+        p.reset_source()
 
 
 @dataclass
@@ -77,7 +78,8 @@ class NewFrame:
 class DetectionRunner(QObject):
     _model_updated = Signal(bool)
     _source_updated = Signal(bool)
-    _frames_stopped = Signal()
+    frames_started = Signal()
+    frames_stopped = Signal()
     new_frame = Signal(NewFrame)
 
     def __init__(self):
@@ -86,6 +88,7 @@ class DetectionRunner(QObject):
 
         self.shm_images: list[SharedMemory] = []
         self.images: list[Img] = []
+        self.just_started = True
         self.request_frames = False
         self.requesting_frames = False
 
@@ -117,16 +120,14 @@ class DetectionRunner(QObject):
         self.pipe.send(CmdSetSrc(src_type, src_value))
 
     def start_frames(self):
+        print("start_frames")
+        self.just_started = True
         self.request_frames = True
         self.requesting_frames = True
         self.pipe.send(CmdGetFrame())
 
-    def stop_frames(self, cb: Callable[[], None]):
+    def stop_frames(self):
         self.request_frames = False
-        if not self.requesting_frames:
-            cb()
-        else:
-            _ = self._frames_stopped.connect(cb, Qt.ConnectionType.SingleShotConnection)
 
     def start(self):
         self.pipe_thread.start()
@@ -145,6 +146,8 @@ class DetectionRunner(QObject):
 
     def _on_response(self, msg: PipeReply):
         match msg.content:
+            case MsgTerminated():
+                assert False
             case ReplySetModel() as obj:
                 self._model_updated.emit(obj.ok)
             case ReplySetSrc() as obj:
@@ -157,15 +160,20 @@ class DetectionRunner(QObject):
                     self.images.append(image)
                 self._source_updated.emit(obj.ok)
             case ReplyGetFrame() as obj:
+                if self.just_started:
+                    self.just_started = False
+                    self.frames_started.emit()
+
                 if not obj.ok:
                     print("no frame: stopping requests")
                     self.requesting_frames = False
-                    self._frames_stopped.emit()
+                    self.frames_stopped.emit()
                     return
+
                 if not self.request_frames:
                     print("not self.request_frames: stopping requests")
                     self.requesting_frames = False
-                    self._frames_stopped.emit()
+                    self.frames_stopped.emit()
                     return
 
                 resp = NewFrame(self.images[obj.idx], obj.objects)
